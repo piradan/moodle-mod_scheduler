@@ -67,6 +67,22 @@ class slot extends mvc_child_record_model {
      * @param int $id
      * @param scheduler $scheduler
      */
+
+    /**
+     * @var string recurrence type (none, daily, weekly, monthly)
+     */
+    protected $recurrencetype;
+    
+    /**
+     * @var int recurrence frequency (every X days/weeks/months)
+     */
+    protected $recurrencefreq;
+    
+    /**
+     * @var int recurrence end date (timestamp)
+     */
+    protected $recurrenceuntil;
+
     public static function load_by_id($id, scheduler $scheduler) {
         $slot = new slot($scheduler);
         $slot->load($id);

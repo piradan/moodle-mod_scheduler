@@ -636,3 +636,19 @@ $string['email_invite_html'] = '<p>Please choose a time slot for an appointment 
 
 $string['email_invitereminder_subject'] = 'Reminder: {$a->module}';
 $string['email_invitereminder_html'] = '<p>This is just a reminder that you have not yet set up your appointment. Please choose a time slot as soon as possible at:</p><p>{$a->scheduler_url}</p>';
+$string['recurrence'] = 'Recurrence';
+$string['recurrencetype'] = 'Recurrence type';
+$string['recurrencenone'] = 'No recurrence';
+$string['recurrencedaily'] = 'Repeat daily';
+$string['recurrenceweekly'] = 'Repeat weekly';
+$string['recurrencemonthly'] = 'Repeat monthly';
+$string['recurrencefreq'] = 'Repeat every';
+$string['recurrenceperiod'] = 'period(s)';
+$string['recurrenceuntil'] = 'Repeat until';
+$string['recurrencetype_help'] = 'The recurrence type determines how frequently slots will be automatically created.
+
+* No recurrence - Only a single slot will be created
+* Repeat daily - The slot will be repeated every day or every few days
+* Repeat weekly - The slot will be repeated on the same day of the week
+* Repeat monthly - The slot will be repeated on the same day of the month';
+$string['recurrenceuntil_help'] = 'This sets the end date for the recurring slot. After this date, no more recurring slots will be created.';

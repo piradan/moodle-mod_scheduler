@@ -236,6 +236,35 @@ class scheduler_editslot_form extends scheduler_slotform_base {
         $mform->addElement('date_selector', 'emaildate', get_string('emailreminderondate', 'scheduler'),
                             array('optional'  => true));
         $mform->setDefault('remindersel', -1);
+        
+        // Recurrence options
+        $mform->addElement('header', 'recurrenceheader', get_string('recurrence', 'scheduler'));
+        
+        $recurrencetypes = array(
+            'none' => get_string('recurrencenone', 'scheduler'),
+            'daily' => get_string('recurrencedaily', 'scheduler'),
+            'weekly' => get_string('recurrenceweekly', 'scheduler'),
+            'monthly' => get_string('recurrencemonthly', 'scheduler')
+        );
+        $mform->addElement('select', 'recurrencetype', get_string('recurrencetype', 'scheduler'), $recurrencetypes);
+        $mform->setDefault('recurrencetype', 'none');
+        $mform->addHelpButton('recurrencetype', 'recurrencetype', 'scheduler');
+        
+        $freqoptions = array();
+        for ($i = 1; $i <= 12; $i++) {
+            $freqoptions[$i] = $i;
+        }
+        $recfreqgroup = array();
+        $recfreqgroup[] = $mform->createElement('select', 'recurrencefreq', '', $freqoptions);
+        $recfreqgroup[] = $mform->createElement('static', 'recfreqperiod', '', get_string('recurrenceperiod', 'scheduler'));
+        $mform->addGroup($recfreqgroup, 'recfreqgroup', get_string('recurrencefreq', 'scheduler'), ' ', false);
+        $mform->disabledIf('recfreqgroup', 'recurrencetype', 'eq', 'none');
+        $mform->setDefault('recurrencefreq', 1);
+        
+        $mform->addElement('date_selector', 'recurrenceuntil', get_string('recurrenceuntil', 'scheduler'),
+                            array('optional' => true));
+        $mform->disabledIf('recurrenceuntil', 'recurrencetype', 'eq', 'none');
+        $mform->addHelpButton('recurrenceuntil', 'recurrenceuntil', 'scheduler');
 
         // Slot comments.
         $mform->addElement('editor', 'notes_editor', get_string('comments', 'scheduler'),
@@ -396,6 +425,17 @@ class scheduler_editslot_form extends scheduler_slotform_base {
         if ($slot->emaildate < 0) {
             $data->emaildate = 0;
         }
+        
+        // Set recurrence fields with defaults if not present
+        if (!isset($data->recurrencetype)) {
+            $data->recurrencetype = 'none';
+        }
+        if (!isset($data->recurrencefreq)) {
+            $data->recurrencefreq = 1;
+        }
+        if (!isset($data->recurrenceuntil) || $data->recurrenceuntil <= 0) {
+            $data->recurrenceuntil = 0;
+        }
 
         $i = 0;
         foreach ($slot->get_appointments() as $appointment) {
@@ -451,6 +491,9 @@ class scheduler_editslot_form extends scheduler_slotform_base {
         $slot->hideuntil = $data->hideuntil;
         $slot->emaildate = $data->emaildate;
         $slot->timemodified = time();
+        $slot->recurrencetype = $data->recurrencetype;
+        $slot->recurrencefreq = isset($data->recurrencefreq) ? $data->recurrencefreq : 1;
+        $slot->recurrenceuntil = isset($data->recurrenceuntil) ? $data->recurrenceuntil : 0;
 
         if (!$slotid) {
             $slot->save(); // Make sure that a new slot has a slot id before proceeding.
@@ -503,10 +546,128 @@ class scheduler_editslot_form extends scheduler_slotform_base {
         }
 
         $slot->save();
+        
+        // Create recurring slots if needed
+        if ($data->recurrencetype != 'none' && !$slotid) {
+            $this->create_recurring_slots($slot, $data);
+        }
 
         $slot = $this->scheduler->get_slot($slot->id);
 
         return $slot;
+    }
+    
+    /**
+     * Create recurring slots based on the recurrence settings
+     * 
+     * @param slot $baseSlot The base slot to create recurrences from
+     * @param object $data Form data containing recurrence settings
+     */
+    private function create_recurring_slots($baseSlot, $data) {
+        $interval = 0;
+        
+        // Determine interval based on recurrence type
+        switch ($data->recurrencetype) {
+            case 'daily':
+                $interval = DAYSECS * $data->recurrencefreq;
+                break;
+            case 'weekly':
+                $interval = WEEKSECS * $data->recurrencefreq;
+                break;
+            case 'monthly':
+                // For monthly, we'll need to calculate based on the day of the month
+                $baseTime = $baseSlot->starttime;
+                $baseMonth = date('n', $baseTime);
+                $baseYear = date('Y', $baseTime);
+                $baseDay = date('j', $baseTime);
+                $baseHour = date('G', $baseTime);
+                $baseMinute = date('i', $baseTime);
+                break;
+        }
+        
+        $endDate = ($data->recurrenceuntil > 0) ? $data->recurrenceuntil : $baseSlot->starttime + (YEARSECS * 1); // Default to 1 year
+        
+        // For daily and weekly recurrences
+        if ($data->recurrencetype == 'daily' || $data->recurrencetype == 'weekly') {
+            $nextTime = $baseSlot->starttime + $interval;
+            while ($nextTime < $endDate) {
+                $this->create_recurrence_slot($baseSlot, $nextTime);
+                $nextTime += $interval;
+            }
+        }
+        // For monthly recurrences
+        else if ($data->recurrencetype == 'monthly') {
+            for ($i = 1; $i <= 36; $i++) { // Limit to 3 years (36 months) of recurring slots
+                $nextMonth = ($baseMonth + ($i * $data->recurrencefreq)) % 12;
+                if ($nextMonth == 0) {
+                    $nextMonth = 12;
+                }
+                $nextYear = $baseYear + floor(($baseMonth + ($i * $data->recurrencefreq) - 1) / 12);
+                
+                // Check if the day exists in the target month (handle 31st, 30th, 29th in different months)
+                $daysInMonth = date('t', mktime(0, 0, 0, $nextMonth, 1, $nextYear));
+                $nextDay = min($baseDay, $daysInMonth);
+                
+                $nextTime = mktime($baseHour, $baseMinute, 0, $nextMonth, $nextDay, $nextYear);
+                
+                if ($nextTime >= $endDate) {
+                    break;
+                }
+                
+                $this->create_recurrence_slot($baseSlot, $nextTime);
+            }
+        }
+    }
+    
+    /**
+     * Create a single recurrence slot
+     * 
+     * @param slot $baseSlot The base slot to copy settings from
+     * @param int $startTime The start time for the new slot
+     * @return slot The newly created slot
+     */
+    private function create_recurrence_slot($baseSlot, $startTime) {
+        $newSlot = new slot($this->scheduler);
+        
+        // Copy base slot properties
+        $newSlot->duration = $baseSlot->duration;
+        $newSlot->exclusivity = $baseSlot->exclusivity;
+        $newSlot->teacherid = $baseSlot->teacherid;
+        $newSlot->appointmentlocation = $baseSlot->appointmentlocation;
+        $newSlot->timemodified = time();
+        $newSlot->notes = $baseSlot->notes;
+        $newSlot->notesformat = $baseSlot->notesformat;
+        
+        // Set new properties
+        $newSlot->starttime = $startTime;
+        
+        // Calculate hideuntil and emaildate relative to the new start time
+        $timeDiff = $baseSlot->starttime - $baseSlot->hideuntil;
+        if ($timeDiff > 0) {
+            $newSlot->hideuntil = $startTime - $timeDiff;
+        } else {
+            $newSlot->hideuntil = $startTime;
+        }
+        
+        if ($baseSlot->emaildate > 0) {
+            $emailDiff = $baseSlot->starttime - $baseSlot->emaildate;
+            if ($emailDiff > 0) {
+                $newSlot->emaildate = $startTime - $emailDiff;
+            } else {
+                $newSlot->emaildate = 0;
+            }
+        } else {
+            $newSlot->emaildate = 0;
+        }
+        
+        // This is not a recurrence template anymore
+        $newSlot->recurrencetype = 'none';
+        $newSlot->recurrencefreq = 1;
+        $newSlot->recurrenceuntil = 0;
+        
+        $newSlot->save();
+        
+        return $newSlot;
     }
 }
 

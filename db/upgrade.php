@@ -367,5 +367,29 @@ function xmldb_scheduler_upgrade($oldversion=0) {
         upgrade_mod_savepoint(true, 2022120200, 'scheduler');
     }
 
+    if ($oldversion < 2023121200) {
+        // Define field recurrencetype to be added to scheduler_slots
+        $table = new xmldb_table('scheduler_slots');
+        $field = new xmldb_field('recurrencetype', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'none', 'emaildate');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Define field recurrencefreq to be added to scheduler_slots
+        $field = new xmldb_field('recurrencefreq', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '1', 'recurrencetype');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Define field recurrenceuntil to be added to scheduler_slots
+        $field = new xmldb_field('recurrenceuntil', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'recurrencefreq');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        // Scheduler savepoint reached
+        upgrade_mod_savepoint(true, 2023121200, 'scheduler');
+    }
+
     return true;
 }
